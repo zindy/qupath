@@ -26,6 +26,7 @@ package qupath.lib.display;
 import java.awt.image.BufferedImage;
 import java.awt.image.ColorModel;
 import java.awt.image.IndexColorModel;
+import java.lang.reflect.Method;
 import java.text.DecimalFormat;
 
 import qupath.lib.awt.color.ColorToolsAwt;
@@ -36,6 +37,8 @@ import qupath.lib.color.ColorDeconvolutionStains;
 import qupath.lib.color.ColorTransformer;
 import qupath.lib.color.ColorTransformer.ColorTransformMethod;
 import qupath.lib.common.ColorTools;
+import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageServer;
 
 /**
  * Interface used to control the display of single channels of image data, where
@@ -98,16 +101,60 @@ public interface ChannelDisplayInfo {
 	 */
 	public abstract String getName();
 
+	/**
+	 * Set the min display value for this channel.
+	 * Note that it is *strongly* advised to use <code>ImageDisplay.setMinMaxDisplay</code> instead 
+	 * since this helps ensure that the <code>ImageDisplay</code> fires appropriate events etc.
+	 * 
+	 * @see ImageDisplay
+	 * 
+	 * @param minDisplay
+	 */
+	@Deprecated
 	public abstract void setMinDisplay(float minDisplay);
 
+	/**
+	 * Set the max display value for this channel.
+	 * Note that it is *strongly* advised to use <code>ImageDisplay.setMinMaxDisplay</code> instead 
+	 * since this helps ensure that the <code>ImageDisplay</code> fires appropriate events etc.
+	 * 
+	 * @see ImageDisplay
+	 * 
+	 * @param maxDisplay
+	 */
+	@Deprecated
 	public abstract void setMaxDisplay(float maxDisplay);
 	
+	/**
+	 * Get the min display value.
+	 * This is used to control the brightness/contrast when painting.
+	 * 
+	 * @return
+	 */
 	public abstract float getMinDisplay();
 
+	/**
+	 * Get the max display value.
+	 * This is used to control the brightness/contrast when painting.
+	 * 
+	 * @return
+	 */
 	public abstract float getMaxDisplay();
 
+	/**
+	 * Get the min allowed display value.
+	 * This is only a hint.
+	 * 
+	 * @return
+	 */
 	public abstract float getMinAllowed();
 
+	/**
+	 * Get the max allowed display value.
+	 * This is only a hint.
+	 * 
+	 * @return
+	 */
 	public abstract float getMaxAllowed();
 
 	/**
@@ -898,8 +945,8 @@ public interface ChannelDisplayInfo {
 		private String name;
 		private int channel;
 
-		private ColorModel cm;
-		private int[] rgbLUT;
+		transient private ColorModel cm;
+		transient private int[] rgbLUT;
 		private int rgb;
 //		private int rgb, r, g, b;
 
@@ -920,13 +967,30 @@ public interface ChannelDisplayInfo {
 		public String getName() {
 			return name;
 		}
-
+		
+		
+		public String getName(ImageData<?> imageData) {
+			try {
+				ImageServer<?> server = imageData.getServer();
+				Method m = server.getClass().getMethod("getChannelName", int.class);
+				if (m != null) {
+					String channelName = (String)m.invoke(server, channel);
+					if (channelName.contains(name))
+						return channelName;
+					return channelName + " (" + name + ")";				
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			return getName();
+		}
+		
 
 		public void setLUTColor(int rgb) {
 			setLUTColor(
-					(rgb & ColorTools.MASK_RED) >> 16,
-					(rgb & ColorTools.MASK_GREEN) >> 8,
-					(rgb & ColorTools.MASK_BLUE));
+					ColorTools.red(rgb),
+					ColorTools.green(rgb),
+					ColorTools.blue(rgb));
 		}
 
 		public void setLUTColor(int r, int g, int b) {
@@ -948,7 +1012,8 @@ public interface ChannelDisplayInfo {
 			
 			cm = new IndexColorModel(8, 256, rb, gb, bb);
 			
-			this.rgb = (r << 16) + (g << 8) + b;
+			this.rgb = ColorTools.makeRGB(r, g, b);
+//			this.rgb = (r << 16) + (g << 8) + b;
 			
 //			this.r = do8BitRangeCheck(r);
 //			this.g = do8BitRangeCheck(g);

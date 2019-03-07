@@ -23,11 +23,13 @@
 
 package qupath.lib.gui.viewer.tools;
 
+import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.geom.Area;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Ellipse;
 import qupath.lib.awt.common.AwtTools;
+import qupath.lib.common.GeneralTools;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.viewer.ModeWrapper;
 import qupath.lib.gui.viewer.QuPathViewer;
@@ -47,6 +50,7 @@ import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathTileObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
+import qupath.lib.regions.ImageRegion;
 import qupath.lib.roi.AWTAreaROI;
 import qupath.lib.roi.AreaROI;
 import qupath.lib.roi.ROIHelpers;
@@ -90,7 +94,8 @@ public class BrushTool extends AbstractPathROITool {
 	
 	protected Cursor getRequestedCursor() {
 		
-		if (PathPrefs.getUseTileBrush())
+		// There appears to be a display bug with custom cursors on a Mac
+		if (PathPrefs.getUseTileBrush() || GeneralTools.isMac())
 			return Cursor.CROSSHAIR;
 		
 		double res = 0.05;
@@ -245,11 +250,7 @@ public class BrushTool extends AbstractPathROITool {
 		PathShape shapeROI = (PathShape)currentROI;
 		
 		PathObject pathObjectUpdated = getUpdatedObject(e, shapeROI, pathObject, -1);
-//		if (pathObject == pathObjectUpdated)
-//			viewer.repaint();
-//		else
-			viewer.setSelectedObject(pathObjectUpdated);
-//		System.out.println("REPAINT CALLED!");
+		viewer.setSelectedObject(pathObjectUpdated);
 	}
 	
 	
@@ -270,8 +271,34 @@ public class BrushTool extends AbstractPathROITool {
 			if (shapeDrawn == null || (subtractMode && !shapeCurrent.intersects(shapeDrawn.getBounds2D())) || 
 					(!subtractMode && shapeCurrent.contains(shapeDrawn.getBounds2D())))
 				return currentObject;
-			shapeNew = PathROIToolsAwt.combineROIs(shapeROI,
-					new AWTAreaROI(shapeDrawn, shapeROI.getC(), shapeROI.getZ(), shapeROI.getT()), subtractMode ? PathROIToolsAwt.CombineOp.SUBTRACT : PathROIToolsAwt.CombineOp.ADD, flatness);
+			
+			// TODO: Consider whether a preference should be used rather than the shift key?
+			// Anyhow, this will switch to 'dodge' mode, and avoid overlapping existing annotations
+			boolean avoidOtherAnnotations = e.isShiftDown();
+			if (subtractMode) {
+				// If subtracting... then just subtract
+				shapeNew = PathROIToolsAwt.combineROIs(shapeROI,
+						new AWTAreaROI(shapeDrawn, shapeROI.getC(), shapeROI.getZ(), shapeROI.getT()), PathROIToolsAwt.CombineOp.SUBTRACT, flatness);
+			} else if (avoidOtherAnnotations) {
+				Rectangle bounds2 = shapeDrawn.getBounds();
+				Collection<PathObject> annotations = viewer.getHierarchy().getObjectsForRegion(PathAnnotationObject.class, ImageRegion.createInstance(
+						bounds2.x, bounds2.y, bounds2.width, bounds2.height, viewer.getZPosition(), viewer.getTPosition()), null);
+				Area area = new Area(shapeCurrent);
+				area.add(new Area(shapeDrawn));
+				if (!annotations.isEmpty()) {
+					for (PathObject pathObject : annotations) {
+						if (pathObject.getROI() instanceof PathArea) {
+							area.subtract(PathROIToolsAwt.getArea(pathObject.getROI()));
+						}
+					}
+				}
+				shapeNew = PathROIToolsAwt.getShapeROI(area, shapeROI.getC(), shapeROI.getZ(), shapeROI.getT());
+			} else {
+				// Just add, regardless of whether there are other annotations below or not
+				shapeNew = PathROIToolsAwt.combineROIs(shapeROI,
+						new AWTAreaROI(shapeDrawn, shapeROI.getC(), shapeROI.getZ(), shapeROI.getT()), PathROIToolsAwt.CombineOp.ADD, flatness);
+			}
+			
 			// Convert complete polygons to areas
 			if (shapeNew instanceof PolygonROI && ((PolygonROI)shapeNew).nVertices() > 50) {
 				shapeNew = new AWTAreaROI(PathROIToolsAwt.getShape(shapeNew), shapeNew.getC(), shapeNew.getZ(), shapeNew.getT());
@@ -323,7 +350,8 @@ public class BrushTool extends AbstractPathROITool {
 //							(pathROI instanceof PolygonROI) ? ((PolygonROI)pathROI).nVertices() :
 //							((pathROI instanceof AreaROI) ? ((AreaROI)pathROI).nVertices() : 1);
 							
-							pathROI = ShapeSimplifierAwt.simplifyShape((PathShape)pathROI, viewer.getDownsampleFactor());
+					pathROI = ShapeSimplifierAwt.simplifyShape((PathShape)pathROI, 1.0);
+//							pathROI = ShapeSimplifierAwt.simplifyShape((PathShape)pathROI, viewer.getDownsampleFactor());
 					
 //					if (nVertices > 500)
 //						pathROI = ShapeSimplifierAwt.simplifyShape((PathShape)pathROI, 2);
@@ -397,6 +425,7 @@ public class BrushTool extends AbstractPathROITool {
 			area.intersect(new Area(bounds));
 			return area;
 		}
+		
 		return shape;
 	}
 	
@@ -405,7 +434,8 @@ public class BrushTool extends AbstractPathROITool {
 	@Override
 	protected ROI createNewROI(double x, double y, int z, int t) {
 		creatingTiledROI = false;
-		return new AWTAreaROI(createShape(x, y, PathPrefs.getUseTileBrush()), -1, z, t);
+		Shape shape = createShape(x, y, PathPrefs.getUseTileBrush());
+		return new AWTAreaROI(shape, -1, z, t);
 //		return new PathPolygonROI(x, y, -1, z, t);
 	}
 	

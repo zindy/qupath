@@ -108,6 +108,7 @@ public class BrightnessContrastCommand implements Runnable {
 	private final BrightnessContrastChannelPane table = new BrightnessContrastChannelPane();
 
 	private final BooleanProperty showGrayscale = new SimpleBooleanProperty(false);
+	private final BooleanProperty showHiLo = new SimpleBooleanProperty(false);
 	private final BooleanProperty invertBackground = new SimpleBooleanProperty(false);
 
 	private final BooleanBinding blockChannelAdjustment = table.currentChannelVisible().not();
@@ -384,6 +385,7 @@ public class BrightnessContrastCommand implements Runnable {
 		labelWarning.setAlignment(Pos.CENTER);
 		labelWarning.setTextAlignment(TextAlignment.CENTER);
 		labelWarning.visibleProperty().bind(invertBackground.and(showGrayscale.not()));
+		labelWarning.visibleProperty().bind(invertBackground.and(showHiLo.not()));
 		labelWarning.setMaxWidth(Double.MAX_VALUE);
 		labelWarning.managedProperty().bind(labelWarning.visibleProperty()); // Remove if not visible
 		labelWarning.visibleProperty().addListener((v, o, n) -> {
@@ -430,6 +432,11 @@ public class BrightnessContrastCommand implements Runnable {
 		cbShowGrayscale.setTooltip(new Tooltip("Show single channel with grayscale lookup table"));
 //		showGrayscale.addListener(this::handleDisplaySettingInvalidated);
 
+		CheckBox cbShowHiLo = new CheckBox("Show HiLo");
+		cbShowHiLo.selectedProperty().bindBidirectional(showHiLo);
+		cbShowHiLo.setTooltip(new Tooltip("Show range limits using red for high and blue for low"));
+//		showHiLo.addListener(this::handleDisplaySettingInvalidated);
+
 		CheckBox cbInvertBackground = new CheckBox("Invert background");
 		cbInvertBackground.selectedProperty().bindBidirectional(invertBackground);
 		cbInvertBackground.setTooltip(new Tooltip("Invert the background for display (i.e. switch between white and black).\n"
@@ -439,6 +446,7 @@ public class BrightnessContrastCommand implements Runnable {
 		HBox paneCheck = new HBox();
 		paneCheck.setAlignment(Pos.CENTER);
 		paneCheck.getChildren().add(cbShowGrayscale);
+		paneCheck.getChildren().add(cbShowHiLo);
 		paneCheck.getChildren().add(cbInvertBackground);
 		paneCheck.setSpacing(10);
 		paneCheck.setMaxHeight(Double.MAX_VALUE);
@@ -510,6 +518,9 @@ public class BrightnessContrastCommand implements Runnable {
 		if (oldValue != null) {
 			showGrayscale.unbindBidirectional(oldValue.useGrayscaleLutProperty());
 			oldValue.useGrayscaleLutProperty().unbindBidirectional(showGrayscale);
+
+			showGrayscale.unbindBidirectional(oldValue.useGrayscaleLutProperty());
+			oldValue.useHiLoLutProperty().unbindBidirectional(showHiLo);
 
 			invertBackground.unbindBidirectional(oldValue.useInvertedBackgroundProperty());
 			oldValue.useInvertedBackgroundProperty().unbindBidirectional(invertBackground);

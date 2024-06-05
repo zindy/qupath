@@ -107,7 +107,16 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 		setLUTColor(
 				ColorTools.red(rgb),
 				ColorTools.green(rgb),
-				ColorTools.blue(rgb));
+				ColorTools.blue(rgb),
+				false);
+	}
+
+	void setLUTColor(int rgb, boolean hilo) {
+		setLUTColor(
+				ColorTools.red(rgb),
+				ColorTools.green(rgb),
+				ColorTools.blue(rgb),
+				hilo);
 	}
 	
 	@Override
@@ -130,8 +139,9 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 	 * @param r red component (0-255)
 	 * @param g green component (0-255)
 	 * @param b blue component (0-255)
+	 * @param hilo adds the range indicator high and low accents
 	 */
-	public void setLUTColor(int r, int g, int b) {
+	public void setLUTColor(int r, int g, int b, boolean hilo) {
 		// Create a LUT
 		rgbLUT = new int[256];
 		byte[] rb = new byte[256];
@@ -150,6 +160,11 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 			rb[i] = (byte)ColorTools.do8BitRangeCheck(r / 255.0 * i);
 			gb[i] = (byte)ColorTools.do8BitRangeCheck(g / 255.0 * i);
 			bb[i] = (byte)ColorTools.do8BitRangeCheck(b / 255.0 * i);
+
+			if (hilo) {
+				rb[0] = 0 ; gb[0] = 0 ; bb[0] = (byte)255 ;
+				rb[255] = (byte)255 ; gb[255] = 0 ; bb[255] = 0 ;
+			}
 			
 			rbi[i] = (byte)ColorTools.do8BitRangeCheck((255 - r) / 255.0 * i);
 			gbi[i] = (byte)ColorTools.do8BitRangeCheck((255 - g) / 255.0 * i);
@@ -160,6 +175,16 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 		cmInverted = new IndexColorModel(8, 256, rbi, gbi, bbi);
 
 		this.rgb = ColorTools.packRGB(r, g, b);
+	}
+
+	/**
+	 * Set the 'maximum' color, which defines the lookup table to use.
+	 * @param r red component (0-255)
+	 * @param g green component (0-255)
+	 * @param b blue component (0-255)
+	 */
+	public void setLUTColor(int r, int g, int b) {
+		setLUTColor(r, g, b, false);
 	}
 
 	@Override

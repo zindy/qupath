@@ -76,6 +76,7 @@ import qupath.lib.color.ColorTransformer.ColorTransformMethod;
  * LUT should be inverted but everything else proceeds are normal. 
  * The calling code then has the job of inverting the resulting image, as done by 
  * {@link ImageDisplay#applyTransforms(BufferedImage, BufferedImage, java.util.List, ChannelDisplayMode)}.
+ * This approach is also used by the HiLo Range indicator.
  * 
  * @author Pete Bankhead
  * @see ImageDisplay

@@ -105,6 +105,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 
 	// Image & color transform-related variables
 	private BooleanProperty useGrayscaleLuts = new SimpleBooleanProperty();
+	private BooleanProperty useHiLoLuts = new SimpleBooleanProperty();
 	private BooleanProperty useInvertedBackground = new SimpleBooleanProperty(false);
 
 	private ImageData<BufferedImage> imageData;
@@ -116,7 +117,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	private LongProperty changeTimestamp = new SimpleLongProperty(System.currentTimeMillis());
 	
 	private ObjectBinding<ChannelDisplayMode> displayMode = Bindings.createObjectBinding(() -> calculateDisplayMode(),
-			useGrayscaleLutProperty(), useInvertedBackgroundProperty());
+			useGrayscaleLutProperty(), useHiLoLutProperty(), useInvertedBackgroundProperty());
 
 	private static Map<String, HistogramManager> cachedHistograms = Collections.synchronizedMap(new HashMap<>());
 	private HistogramManager histogramManager = null;
@@ -177,6 +178,9 @@ public class ImageDisplay extends AbstractImageRenderer {
 				}
 				beforeGrayscaleChannels.clear();
 			}
+			saveChannelColorProperties();
+		});
+		useHiLoLuts.addListener((v, o, n) -> {
 			saveChannelColorProperties();
 		});
 		useInvertedBackground.addListener((v, o, n) -> {
@@ -287,6 +291,29 @@ public class ImageDisplay extends AbstractImageRenderer {
 	}
 	
 	/**
+	 * Property that specifies whether HiLo range indicators should be applied
+	 * @return
+	 */
+	public BooleanProperty useHiLoLutProperty() {
+		return useHiLoLuts;
+	}
+	
+	/**
+	 * Get the value of {@link #useHiLoLutProperty()}
+	 * @return
+	 */
+	public boolean useHiLoLuts() {
+		return useHiLoLuts.get();
+	}
+
+	/**
+	 * Set the value of {@link #useHiLoLutProperty()}
+	 * @param useHiLoLuts
+	 */
+	public void setUseHiLoLuts(boolean useHiLoLuts) {
+		this.useHiLoLuts.set(useHiLoLuts);
+	}
+		/**
 	 * Property that specifies whether the background should be inverted (i.e. to make fluorescence resemble brightfield, and vice versa)
 	 * @return
 	 */
@@ -493,7 +520,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 				if (option instanceof DirectServerChannelInfo directChannel && c < server.nChannels()) {
 					var channel = server.getChannel(c);
 					if (!Objects.equals(option.getColor(), channel.getColor())) {
-						directChannel.setLUTColor(channel.getColor());
+						directChannel.setLUTColor(channel.getColor(),useHiLoLuts.get());
 						colorsUpdated = true;
 					}
 				}

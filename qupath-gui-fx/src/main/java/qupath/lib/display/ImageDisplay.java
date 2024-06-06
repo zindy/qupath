@@ -144,6 +144,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	 */
 	public ImageDisplay() {
 		useGrayscaleLuts.addListener((v, o, n) -> {
+			logger.info("Listinging grayscale!");
 			if (n) {
 				// Snapshot the names of channels active before switching to grayscale
 				selectedChannels.stream().map(ChannelDisplayInfo::getName).forEach(beforeGrayscaleChannels::add);
@@ -181,9 +182,11 @@ public class ImageDisplay extends AbstractImageRenderer {
 			saveChannelColorProperties();
 		});
 		useHiLoLuts.addListener((v, o, n) -> {
+			logger.info("Listinging HiLo!");
 			saveChannelColorProperties();
 		});
 		useInvertedBackground.addListener((v, o, n) -> {
+			logger.info("Listinging inverted background!");
 			saveChannelColorProperties();
 		});
 
@@ -339,14 +342,20 @@ public class ImageDisplay extends AbstractImageRenderer {
 	
 	private ChannelDisplayMode calculateDisplayMode() {
 		if (useGrayscaleLuts()) {
-			if (useInvertedBackground())
+			if (useHiLoLuts())
+				return ChannelDisplayMode.HILO_GRAYSCALE;
+			else if (useInvertedBackground())
 				return ChannelDisplayMode.INVERTED_GRAYSCALE;
 			else
 				return ChannelDisplayMode.GRAYSCALE;
-		} else if (useInvertedBackground())
-			return ChannelDisplayMode.INVERTED_COLOR;
-		else
-			return ChannelDisplayMode.COLOR;
+		} else {
+			if (useHiLoLuts())
+				return ChannelDisplayMode.HILO_COLOR;
+			else if (useInvertedBackground())
+				return ChannelDisplayMode.INVERTED_COLOR;
+			else
+				return ChannelDisplayMode.COLOR;
+		}
 	}
 
 	/**
@@ -582,7 +591,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 				Integer colorOld = multiInfo.getColor();
 				Object colorNew = imageData.getProperty("COLOR_CHANNEL:" + info.getName());
 				if (colorNew instanceof Integer colorInt && colorInt.equals(colorOld)) {
-					multiInfo.setLUTColor(colorInt);
+					multiInfo.setLUTColor(colorInt,useHiLoLuts.get());
 					n++;
 				}
 			}
@@ -770,6 +779,8 @@ public class ImageDisplay extends AbstractImageRenderer {
 		
 		boolean invertBackground = mode.invertColors();
 		boolean isGrayscale = mode == ChannelDisplayMode.GRAYSCALE || mode == ChannelDisplayMode.INVERTED_GRAYSCALE;
+		boolean isHiLo = mode == ChannelDisplayMode.HILO_GRAYSCALE || mode == ChannelDisplayMode.HILO_COLOR;
+		logger.info("HiLo: {}", isHiLo);
 
 //		// If we don't have anything, just give a black image
 //		if (selectedChannels.isEmpty()) {

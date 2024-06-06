@@ -39,6 +39,11 @@ public enum ChannelDisplayMode {
 	COLOR(false),
 	
 	/**
+	 * Show using a High-Low range indicator
+	 */
+	HILO_COLOR(false),
+	
+	/**
 	 * Show using color LUT with an inverted background
 	 */
 	INVERTED_COLOR(true),
@@ -47,11 +52,17 @@ public enum ChannelDisplayMode {
 	 * Show using a grayscale LUT (black to white)
 	 */
 	GRAYSCALE(false),
+
+	/**
+	 * Show using a High-Low range indicator
+	 */
+	HILO_GRAYSCALE(false),
 	
 	/**
 	 * Show using an inverted grayscale LUT (white to black)
 	 */
 	INVERTED_GRAYSCALE(true);
+
 	
 	private boolean invertColors;
 	
@@ -62,5 +73,5 @@ public enum ChannelDisplayMode {
 	public boolean invertColors() {
 		return invertColors;
 	}
-	
+
 }

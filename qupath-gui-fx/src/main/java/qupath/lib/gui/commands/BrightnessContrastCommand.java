@@ -519,7 +519,7 @@ public class BrightnessContrastCommand implements Runnable {
 			showGrayscale.unbindBidirectional(oldValue.useGrayscaleLutProperty());
 			oldValue.useGrayscaleLutProperty().unbindBidirectional(showGrayscale);
 
-			showGrayscale.unbindBidirectional(oldValue.useGrayscaleLutProperty());
+			showHiLo.unbindBidirectional(oldValue.useHiLoLutProperty());
 			oldValue.useHiLoLutProperty().unbindBidirectional(showHiLo);
 
 			invertBackground.unbindBidirectional(oldValue.useInvertedBackgroundProperty());
@@ -530,6 +530,7 @@ public class BrightnessContrastCommand implements Runnable {
 		}
 		if (newValue != null) {
 			showGrayscale.bindBidirectional(newValue.useGrayscaleLutProperty());
+			showHiLo.bindBidirectional(newValue.useHiLoLutProperty());
 			invertBackground.bindBidirectional(newValue.useInvertedBackgroundProperty());
 
 			newValue.switchToGrayscaleChannelProperty().bind(currentChannelProperty);

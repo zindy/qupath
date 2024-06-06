@@ -161,14 +161,20 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 			gb[i] = (byte)ColorTools.do8BitRangeCheck(g / 255.0 * i);
 			bb[i] = (byte)ColorTools.do8BitRangeCheck(b / 255.0 * i);
 
-			if (hilo) {
-				rb[0] = 0 ; gb[0] = 0 ; bb[0] = (byte)255 ;
-				rb[255] = (byte)255 ; gb[255] = 0 ; bb[255] = 0 ;
-			}
-			
 			rbi[i] = (byte)ColorTools.do8BitRangeCheck((255 - r) / 255.0 * i);
 			gbi[i] = (byte)ColorTools.do8BitRangeCheck((255 - g) / 255.0 * i);
 			bbi[i] = (byte)ColorTools.do8BitRangeCheck((255 - b) / 255.0 * i);
+		}
+
+		if (hilo) {
+			rgbLUT[0] = ColorTools.packRGB(0 , 0, 255);
+			rgbLUT[255] = ColorTools.packRGB(255 , 0, 0);
+
+			rb[0] = 0 ; gb[0] = 0 ; bb[0] = (byte)255 ;
+			rb[255] = (byte)255 ; gb[255] = 0 ; bb[255] = 0 ;
+
+			rbi[0] = 0 ; gbi[0] = 0 ; bbi[0] = (byte)255 ;
+			rbi[255] = (byte)255 ; gbi[255] = 0 ; bbi[255] = 0 ;
 		}
 
 		cm = new IndexColorModel(8, 256, rb, gb, bb);

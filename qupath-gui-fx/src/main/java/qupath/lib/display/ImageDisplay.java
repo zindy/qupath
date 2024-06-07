@@ -89,6 +89,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	 *       other changes.
 	 */
 
+	//private static final java.util.logging.Logger logger = LoggerFactory.getLogger(ImageDisplay.class);
 	private static final Logger logger = LoggerFactory.getLogger(ImageDisplay.class);
 	
 	/**
@@ -778,9 +779,10 @@ public class ImageDisplay extends AbstractImageRenderer {
 			mode = ChannelDisplayMode.COLOR;
 		
 		boolean invertBackground = mode.invertColors();
-		boolean isGrayscale = mode == ChannelDisplayMode.GRAYSCALE || mode == ChannelDisplayMode.INVERTED_GRAYSCALE;
+		boolean isGrayscale = mode == ChannelDisplayMode.GRAYSCALE || mode == ChannelDisplayMode.INVERTED_GRAYSCALE || mode == ChannelDisplayMode.HILO_GRAYSCALE;
 		boolean isHiLo = mode == ChannelDisplayMode.HILO_GRAYSCALE || mode == ChannelDisplayMode.HILO_COLOR;
-		logger.info("HiLo: {}", isHiLo);
+		logger.info("Grayscale? {}", isGrayscale);
+		logger.info("HiLo? {}", isHiLo);
 
 //		// If we don't have anything, just give a black image
 //		if (selectedChannels.isEmpty()) {
@@ -839,6 +841,10 @@ public class ImageDisplay extends AbstractImageRenderer {
 			invertRGB(pixels);
 		}
 
+		if (isHiLo) {
+			addHiLo(pixels);
+		}
+
 		imgOutput.getRaster().setDataElements(0, 0, imgOutput.getWidth(), imgOutput.getHeight(), pixels);
 		
 //		imgOutput.setRGB(0, 0, imgOutput.getWidth(), imgOutput.getHeight(), pixels, 0, imgOutput.getWidth());
@@ -861,6 +867,25 @@ public class ImageDisplay extends AbstractImageRenderer {
 		}
 	}
 
+	private static void addHiLo(int[] pixels) {
+		for (int i = 0; i < pixels.length; i++) {
+			int val = pixels[i];
+			int r = ColorTools.red(val);
+			int g = ColorTools.green(val);
+			int b = ColorTools.blue(val);
+			if (r == 0 && g == 0 && b == 0) {
+				r = 0;
+				g = 0;
+				b = 255;
+			} else if (r == 255 && g == 255 && b == 255) {
+				r = 255;
+				g = 0;
+				b = 0;
+			}
+
+			pixels[i] = ColorTools.packRGB(r, g, b);
+		}
+	}
 
 	/**
 	 * Get a string representation of a transformed pixel value, using the currently-selected channels.

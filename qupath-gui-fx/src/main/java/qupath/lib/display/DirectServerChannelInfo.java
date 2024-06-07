@@ -122,6 +122,7 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 	@Override
 	protected ColorModel getColorModel(ChannelDisplayMode mode) {
 		switch (mode) {
+		case HILO_GRAYSCALE:
 		case INVERTED_GRAYSCALE:
 //			return CM_GRAYSCALE_INVERTED;
 		case GRAYSCALE:

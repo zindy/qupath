@@ -870,20 +870,13 @@ public class ImageDisplay extends AbstractImageRenderer {
 	private static void addHiLo(int[] pixels) {
 		for (int i = 0; i < pixels.length; i++) {
 			int val = pixels[i];
-			int r = ColorTools.red(val);
-			int g = ColorTools.green(val);
-			int b = ColorTools.blue(val);
-			if (r == 0 && g == 0 && b == 0) {
-				r = 0;
-				g = 0;
-				b = 255;
-			} else if (r == 255 && g == 255 && b == 255) {
-				r = 255;
-				g = 0;
-				b = 0;
+			if (val == 0xFFFFFFFF) {
+				//white becomes red
+				pixels[i] = 0xFFFF0000;
+			} else if (val == 0xFF000000) {
+				//black becomes blue
+				pixels[i] = 0xFF0000FF;
 			}
-
-			pixels[i] = ColorTools.packRGB(r, g, b);
 		}
 	}
 

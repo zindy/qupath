@@ -27,6 +27,8 @@ import java.awt.geom.Point2D;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
@@ -38,7 +40,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javafx.scene.Cursor;
+import javafx.scene.Group;
+import javafx.scene.image.Image;
+import javafx.scene.ImageCursor;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Ellipse;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.SnapshotParameters;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.viewer.tools.QuPathPenManager;
 import qupath.lib.gui.viewer.tools.QuPathPenManager.PenInputManager;
@@ -87,13 +95,14 @@ public class BrushToolEventHandler extends AbstractPathROIToolEventHandler {
 //	/**
 //	 * Cache the last 50 cursors we saw
 //	 */
-//	private static Map<String, Cursor> cursorCache = new LinkedHashMap<String, Cursor>() {
-//		private static final long serialVersionUID = 1L;
-//		@Override
-//		protected boolean removeEldestEntry(Map.Entry<String, Cursor> eldest) {
-//	        return size() > 50;
-//	    }
-//	};
+	private static Map<String, Cursor> cursorCache = new LinkedHashMap<String, Cursor>() {
+		private static final long serialVersionUID = 1L;
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<String, Cursor> eldest) {
+			//EZ FIXME changed 50 to 1 for testing during debugging
+	        return size() > 1;
+	    }
+	};
 	
 	/**
 	 * Returns false.
@@ -106,33 +115,55 @@ public class BrushToolEventHandler extends AbstractPathROIToolEventHandler {
 	protected Cursor getRequestedCursor() {
 		// Display of image cursors seems buggy, at least on macOS?
 		// TODO: Check if image cursors are buggy on all platforms or may be reinstated
-		return Cursor.CROSSHAIR;
-//		if (PathPrefs.getUseTileBrush())
-//			return Cursor.CROSSHAIR;
-//		
-//		double res = 0.05;
-//		
-//		double diameter = getBrushDiameter() / viewer.getDownsampleFactor();
-//		if (requestedCursor != null && Math.abs(diameter - lastRequestedCursorDiameter) < res)
-//			return requestedCursor;
-//		
-//		Color color = viewer.getSuggestedOverlayColorFX();
-//		String key = color.toString() + (int)Math.round(diameter * (1.0/res));
-//		requestedCursor = cursorCache.get(key);
-//		if (requestedCursor != null)
-//			return requestedCursor;
-//		
+		//return Cursor.CROSSHAIR;
+		//if (PathPrefs.getUseTileBrush())
+		//	return Cursor.CROSSHAIR;
+		
+		double res = 0.05;
+		var viewer = getViewer();
+		
+		double diameter = getBrushDiameter() / viewer.getDownsampleFactor();
+		if (requestedCursor != null && Math.abs(diameter - lastRequestedCursorDiameter) < res)
+			return requestedCursor;
+		
+		// FIXME Let's use BLACK and WHITE directly for now...
+		Color color = Color.BLACK; //viewer.getSuggestedOverlayColorFX();
+		String key = color.toString() + (int)Math.round(diameter * (1.0/res));
+		requestedCursor = cursorCache.get(key);
+		if (requestedCursor != null)
+			return requestedCursor;
+		
 //		Ellipse e = new Ellipse(diameter/2, diameter/2);
 //		e.setFill(null);
 //		e.setStroke(color);
+		Group g = new Group();
+		Ellipse e1 = new Ellipse(diameter/2, diameter/2);
+		Ellipse e2 = new Ellipse(diameter/2, diameter/2);
+
+		e1.setFill(Color.TRANSPARENT);
+		e1.setStroke(color);
+
+		e2.setFill(Color.TRANSPARENT);
+		e2.setStroke(Color.WHITE);
+		e2.getStrokeDashArray().addAll(3.0, 3.0);
+
+		g.getChildren().add(e1);
+		g.getChildren().add(e2);
 //		Image image = e.snapshot(snapshotParameters, null);
 //		requestedCursor = new ImageCursor(image, image.getWidth()/2, image.getHeight()/2);
 //		
+		//Testing generating new snapshot parameters each time
+		SnapshotParameters snapshotParameters = new SnapshotParameters();
+		snapshotParameters.setFill(Color.TRANSPARENT);
+
+		Image image = g.snapshot(snapshotParameters, null);
+		requestedCursor = new ImageCursor(image, image.getWidth()/2, image.getHeight()/2);
+		
 //		this.registerTool(viewer);
 //
-//		cursorCache.put(key, requestedCursor);
-//
-//		return requestedCursor;
+		cursorCache.put(key, requestedCursor);
+
+		return requestedCursor;
 	}
 	
 	

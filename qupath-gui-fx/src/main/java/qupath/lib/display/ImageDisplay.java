@@ -101,6 +101,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	// Image & color transform-related variables
 	private final BooleanProperty useGrayscaleLuts = new SimpleBooleanProperty();
 	private final BooleanProperty useInvertedBackground = new SimpleBooleanProperty(false);
+	private final BooleanProperty useHiLoLuts = new SimpleBooleanProperty();
 
 	private ImageData<BufferedImage> imageData;
 	private ChannelManager channelManager = null;
@@ -116,7 +117,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	private final LongProperty eventCountProperty = new SimpleLongProperty(eventCount.get());
 	
 	private final ObjectBinding<ChannelDisplayMode> displayMode = Bindings.createObjectBinding(this::calculateDisplayMode,
-			useGrayscaleLutProperty(), useInvertedBackgroundProperty());
+			useGrayscaleLutProperty(), useHiLoLutProperty(), useInvertedBackgroundProperty());
 
 	private static final Map<String, HistogramManager> cachedHistograms = Collections.synchronizedMap(new HashMap<>());
 	private HistogramManager histogramManager = null;
@@ -167,6 +168,8 @@ public class ImageDisplay extends AbstractImageRenderer {
 	public ImageDisplay() {
 		useGrayscaleLuts.addListener(this::handleUseGrayscaleLutsChange);
 		useInvertedBackground.addListener(this::handleInvertedBackgroundChange);
+		// force a repaint when HiLo is toggled
+        useHiLoLuts.addListener((v, o, n) -> incrementEventCount());
 		selectedChannels.addListener(this::handleSelectedChannelsChange);
 	}
 
@@ -328,6 +331,22 @@ public class ImageDisplay extends AbstractImageRenderer {
 	}
 	
 	/**
+	 * Property that specifies whether HiLo range indicators should be applied
+	 * @return
+	 */
+	public BooleanProperty useHiLoLutProperty() {
+		return useHiLoLuts;
+	}
+
+	/**
+	 * Set the value of {@link #useHiLoLutProperty()}
+	 * @param useHiLoLuts
+	 */
+	public void setUseHiLoLuts(boolean useHiLoLuts) {
+		this.useHiLoLuts.set(useHiLoLuts);
+	}
+
+	/**
 	 * Get the value of {@link #useInvertedBackgroundProperty()}
 	 * @return
 	 */
@@ -339,10 +358,14 @@ public class ImageDisplay extends AbstractImageRenderer {
 		if (useGrayscaleLuts()) {
 			if (useInvertedBackground())
 				return ChannelDisplayMode.INVERTED_GRAYSCALE;
+			else if (useHiLoLutProperty().get()) // Check for HiLo
+				return ChannelDisplayMode.HILO_GRAYSCALE;
 			else
 				return ChannelDisplayMode.GRAYSCALE;
 		} else if (useInvertedBackground())
 			return ChannelDisplayMode.INVERTED_COLOR;
+		else if (useHiLoLutProperty().get()) // Optional: Support HiLo in Color mode too
+			return ChannelDisplayMode.HILO_COLOR;
 		else
 			return ChannelDisplayMode.COLOR;
 	}

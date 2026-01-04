@@ -113,6 +113,8 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 	@Override
 	protected ColorModel getColorModel(ChannelDisplayMode mode) {
 		switch (mode) {
+		case HILO_GRAYSCALE:
+			return CM_HILO_GRAYSCALE;
 		case INVERTED_GRAYSCALE:
 //			return CM_GRAYSCALE_INVERTED;
 		case GRAYSCALE:
@@ -160,6 +162,35 @@ public class DirectServerChannelInfo extends AbstractSingleChannelInfo {
 		cmInverted = new IndexColorModel(8, 256, rbi, gbi, bbi);
 
 		this.rgb = ColorTools.packRGB(r, g, b);
+	}
+
+	// Define the static HiLo Grayscale ColorModel
+	private static final IndexColorModel CM_HILO_GRAYSCALE = createHiLoGrayscale();
+
+	private static IndexColorModel createHiLoGrayscale() {
+		byte[] r = new byte[256];
+		byte[] g = new byte[256];
+		byte[] b = new byte[256];
+
+		// Create standard linear grayscale
+		for (int i = 0; i < 256; i++) {
+			byte val = (byte)qupath.lib.common.ColorTools.do8BitRangeCheck(i);
+			r[i] = val;
+			g[i] = val;
+			b[i] = val;
+		}
+
+		// Set Low (0) to Blue
+		r[0] = 0;
+		g[0] = 0;
+		b[0] = (byte) 255;
+
+		// Set High (255) to Red
+		r[255] = (byte) 255;
+		g[255] = 0;
+		b[255] = 0;
+
+		return new IndexColorModel(8, 256, r, g, b);
 	}
 
 	@Override

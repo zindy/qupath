@@ -102,6 +102,7 @@ class RGBDirectChannelInfo extends AbstractChannelInfo {
 			int ind = 0;
 			for (int v : rgbInput) {
 				if (doGrayscale) {
+					int vr,vg,vb;
 					// We convert to grayscale using weighted RGB values
 					double r = ((ColorTools.red(v) - offset) * scale);
 					double g = ((ColorTools.green(v) - offset) * scale);
@@ -110,7 +111,14 @@ class RGBDirectChannelInfo extends AbstractChannelInfo {
 //					int value = ColorTools.do8BitRangeCheck((r + g + b) / 3.0);
 					// Using weighting
 					int value = ColorTools.do8BitRangeCheck((0.299 * r + 0.587 * g + 0.114 * b));
-					rgbOutput[ind] = ColorTools.packRGB(value, value, value);
+					if (value == 0) {
+						vr = 0; vg = 0 ; vb = 255 ;
+					} else if (value == 255) {
+						vr = 255; vg = 0 ; vb = 0 ;
+					} else {
+						vr = value ; vg = value ; vb = value ;
+					}
+					rgbOutput[ind] = ColorTools.packRGB(vr, vg, vb);
 				} else if (doInvert) {
 					// Get the original RGB values
 					double r = ((ColorTools.red(v) - offset) * scale);
@@ -134,6 +142,14 @@ class RGBDirectChannelInfo extends AbstractChannelInfo {
 					int r = ColorTools.do8BitRangeCheck((ColorTools.red(v) - offset) * scale);
 					int g = ColorTools.do8BitRangeCheck((ColorTools.green(v) - offset) * scale);
 					int b = ColorTools.do8BitRangeCheck((ColorTools.blue(v) - offset) * scale);
+					// ONLY apply HiLo if the mode is HILO_COLOR or HILO_GRAYSCALE
+					if (mode == ChannelDisplayMode.HILO_COLOR || mode == ChannelDisplayMode.HILO_GRAYSCALE) {
+						if (r == 0 && g == 0 && b == 0) {
+							r = 0 ; g = 0 ; b = 255;
+						} else if (r == 255 && g == 255 && b == 255) {
+							r = 255 ; g = 0 ; b = 0;
+						}
+					}
 					rgbOutput[ind] = (r << 16) + (g << 8) + b;
 				}
 				ind++;

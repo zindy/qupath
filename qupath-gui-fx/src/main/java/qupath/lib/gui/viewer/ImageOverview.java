@@ -27,10 +27,15 @@ import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.image.PixelFormat;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.PixelWriter;
 import javafx.scene.image.WritableImage;
+import javafx.scene.input.MouseButton;
 import javafx.scene.paint.Color;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -123,16 +128,96 @@ class ImageOverview implements QuPathViewerListener {
 		setImage(viewer.getRGBThumbnail());
 		
 		canvas.setOnMouseClicked(e -> {
-			mouseViewerToLocation(e.getX(), e.getY());
+			if (e.getButton() == MouseButton.PRIMARY) {
+				mouseViewerToLocation(e.getX(), e.getY());
+			}
+		});
+		
+		canvas.setOnMousePressed(e -> {
+			// Consume right-click to prevent viewer's context menu from showing
+			if (e.isSecondaryButtonDown()) {
+				e.consume();
+			}
 		});
 		
 		canvas.setOnMouseDragged(e -> {
-			mouseViewerToLocation(e.getX(), e.getY());
-			e.consume();
+			if (e.isPrimaryButtonDown()) {
+				mouseViewerToLocation(e.getX(), e.getY());
+				e.consume();
+			}
+		});
+		
+		canvas.setOnScroll(e -> {
+			if (e.isAltDown()) {
+				// Alt + mousewheel to resize the overview
+				double delta = e.getDeltaY();
+				int increment = delta > 0 ? 50 : -50;
+				int newWidth = Math.max(50, Math.min(800, preferredWidth + increment));
+				setPreferredWidth(newWidth);
+				e.consume(); // Stop event propagation
+			}
 		});
 		
 		viewer.zPositionProperty().addListener(v -> repaint());
 		viewer.tPositionProperty().addListener(v -> repaint());
+		
+		// Create context menu
+		ContextMenu contextMenu = new ContextMenu();
+		
+		// Size options
+		MenuItem smallMapItem = new MenuItem("Small Map");
+		smallMapItem.setOnAction(e -> setPreferredWidth(400));
+		
+		MenuItem mediumMapItem = new MenuItem("Medium Map");
+		mediumMapItem.setOnAction(e -> setPreferredWidth(600));
+		
+		MenuItem largeMapItem = new MenuItem("Large Map");
+		largeMapItem.setOnAction(e -> setPreferredWidth(800));
+		
+		// Tracking options
+		CheckMenuItem enableTrackingItem = new CheckMenuItem("Enable Tracking");
+		enableTrackingItem.setOnAction(e -> {
+			if (enableTrackingItem.isSelected()) {
+				enableTracking();
+			} else {
+				disableTracking();
+			}
+		});
+		
+		CheckMenuItem showTrackMapItem = new CheckMenuItem("Show Track Map");
+		showTrackMapItem.setOnAction(e -> showTracking(showTrackMapItem.isSelected()));
+		
+		MenuItem resetTrackMapItem = new MenuItem("Reset Track Map");
+		resetTrackMapItem.setOnAction(e -> resetTracking());
+		
+		// Hide map option
+		MenuItem hideMapItem = new MenuItem("Hide Map");
+		hideMapItem.setOnAction(e -> setVisible(false));
+		
+		// Build menu
+		contextMenu.getItems().addAll(
+			smallMapItem,
+			mediumMapItem,
+			largeMapItem,
+			new SeparatorMenuItem(),
+			enableTrackingItem,
+			showTrackMapItem,
+			resetTrackMapItem,
+			new SeparatorMenuItem(),
+			hideMapItem
+		);
+		
+		// Add context menu handler
+		canvas.setOnContextMenuRequested(e -> {
+			// Update checkbox states
+			enableTrackingItem.setSelected(trackingEnabled);
+			showTrackMapItem.setSelected(trackingVisible);
+			showTrackMapItem.setDisable(!trackingEnabled);
+			resetTrackMapItem.setDisable(!trackingEnabled);
+			
+			contextMenu.show(canvas, e.getScreenX(), e.getScreenY());
+			e.consume(); // Prevent event propagation to viewer
+		});
 			
 		viewer.addViewerListener(this);
 	}
@@ -147,14 +232,19 @@ class ImageOverview implements QuPathViewerListener {
 	 */
 	public void setPreferredWidth(int width) {
 		if (width > 0 && this.preferredWidth != width) {
+			// Capture current shape in image coordinates before resizing
+			Shape currentShapeInImageCoords = null;
+			if (viewer != null && viewer.hasServer()) {
+				currentShapeInImageCoords = viewer.getDisplayedRegionShape();
+			}
+			
 			this.preferredWidth = width;
 			this.imgLastThumbnail = null;
 			if (viewer != null && viewer.hasServer()) {
 				setImage(viewer.getRGBThumbnail());
-				// Re-transform the visible region with the new scale
-				Shape currentShape = viewer.getDisplayedRegionShape();
-				if (currentShape != null && transform != null) {
-					shapeVisible = transform.createTransformedShape(currentShape);
+				// Re-transform using the SAME shape we captured before resizing
+				if (currentShapeInImageCoords != null && transform != null) {
+					shapeVisible = transform.createTransformedShape(currentShapeInImageCoords);
 				}
 			}
 			repaint();
@@ -182,8 +272,9 @@ class ImageOverview implements QuPathViewerListener {
 	public void enableTracking() {
 		if (!trackingEnabled) {
 			this.trackingEnabled = true;
+			this.trackingVisible = true; // Automatically show when enabling
 			initializeTrackingOverlay();
-			logger.info("Tracking enabled");
+			logger.info("Tracking enabled and visible");
 			repaint();
 		}
 	}

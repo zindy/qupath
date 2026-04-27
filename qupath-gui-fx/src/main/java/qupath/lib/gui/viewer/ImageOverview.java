@@ -68,12 +68,23 @@ class ImageOverview implements QuPathViewerListener {
 
 	private boolean repaintRequested = false;
 
-	private BufferedImage imgLastThumbnail;
-	private WritableImage imgPreview;
+	/*
+	 * There are two reasons for the following variables...
+	 * 	1 - The viewer's thumbnail is not guaranteed to remain constant, even if the image server does -
+	 * 		this is because it can be modified by color transforms, brightness/contrast settings
+	 * 	2 - Simply drawing the image directly & rescaling on-the-fly produces a very low-quality image -
+	 * 		getScaledInstance() provides something smoother
+	 * Therefore to assist repainting, we need to have:
+	 * 	- a nicely-rescaled thumbnail to draw
+	 * 	- the original thumbnail image used to produce the scaled version
+	 * The latter means we can compare it with the viewer's thumbnail & we know if it needs to be updated
+	 */
+	private BufferedImage imgLastThumbnail; // The last thumbnail the viewer gave us
+	private WritableImage imgPreview;       // The (probably downsampled) preview version
 
-	private int preferredWidth = 150;
+	private int preferredWidth = 150; // Preferred component/image width - used for thumbnail scaling
 
-	private Shape shapeVisible = null;
+	private Shape shapeVisible = null; // The visible shape (transformed already)
 	private AffineTransform transform;
 
 	private static Color color = Color.rgb(200, 0, 0, .8);
@@ -128,6 +139,11 @@ class ImageOverview implements QuPathViewerListener {
 		setImage(viewer.getRGBThumbnail());
 
 		canvas.setOnMouseClicked(e -> {
+			// TODO: Check focus situation
+//			// Pass focus to viewer if required - use first click for focus, not moving yet
+//			if (viewer != null && viewer.isAncestorOf(ImageOverview.this) && !viewer.hasFocus())
+//				viewer.requestFocus();
+//			else
 			if (e.getButton() == MouseButton.PRIMARY) {
 				mouseViewerToLocation(e.getX(), e.getY());
 			}
@@ -254,6 +270,7 @@ class ImageOverview implements QuPathViewerListener {
 		if (imgPreview != null && viewer != null && viewer.getServer() != null) {
 			double scale = imgPreview.getWidth() / viewer.getServer().getWidth();
 			if (scale > 0) {
+				// Reuse an existing transform if we have one
 				if (transform == null)
 					transform = AffineTransform.getScaleInstance(scale, scale);
 				else
@@ -629,6 +646,7 @@ class ImageOverview implements QuPathViewerListener {
 			g.setStroke(color);
 			g.setLineWidth(2);
 
+			// TODO: Try to avoid PathIterator, and do something more JavaFX-like
 			PathIterator iterator = shapeVisible.getPathIterator(null);
 			double[] coords = new double[6];
 			g.beginPath();
@@ -646,6 +664,8 @@ class ImageOverview implements QuPathViewerListener {
 					logger.debug("Unknown PathIterator type: {}", type);
 				iterator.next();
 			}
+
+//			g2d.draw(shapeVisible);
 		}
 
 		// Draw border
@@ -655,6 +675,7 @@ class ImageOverview implements QuPathViewerListener {
 
 		repaintRequested = false;
 	}
+
 
 	public boolean isVisible() {
 		return canvas.isVisible();
@@ -671,6 +692,7 @@ class ImageOverview implements QuPathViewerListener {
 	private double getHeight() {
 		return canvas.getHeight();
 	}
+
 
 	private void setImage(BufferedImage img) {
 		if (img == imgLastThumbnail)
@@ -702,6 +724,7 @@ class ImageOverview implements QuPathViewerListener {
 		}
 		updateTransform();
 	}
+
 
 	@Override
 	public void imageDataChanged(QuPathViewer viewer, ImageData<BufferedImage> imageDataOld, ImageData<BufferedImage> imageDataNew) {
@@ -746,6 +769,7 @@ class ImageOverview implements QuPathViewerListener {
 		return canvas;
 	}
 
+
 	@Override
 	public void selectedObjectChanged(QuPathViewer viewer, PathObject pathObjectSelected) {}
 
@@ -753,4 +777,5 @@ class ImageOverview implements QuPathViewerListener {
 	public void viewerClosed(QuPathViewer viewer) {
 		this.viewer = null;
 	}
+
 }

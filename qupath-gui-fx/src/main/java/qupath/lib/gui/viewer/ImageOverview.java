@@ -190,21 +190,15 @@ class ImageOverview implements QuPathViewerListener {
 		MenuItem resetTrackMapItem = new MenuItem("Reset Track Map");
 		resetTrackMapItem.setOnAction(e -> resetTracking());
 		
-		// Hide map option
-		MenuItem hideMapItem = new MenuItem("Hide Map");
-		hideMapItem.setOnAction(e -> setVisible(false));
-		
 		// Build menu
 		contextMenu.getItems().addAll(
-			smallMapItem,
-			mediumMapItem,
-			largeMapItem,
-			new SeparatorMenuItem(),
 			enableTrackingItem,
 			showTrackMapItem,
 			resetTrackMapItem,
 			new SeparatorMenuItem(),
-			hideMapItem
+			smallMapItem,
+			mediumMapItem,
+			largeMapItem
 		);
 		
 		// Add context menu handler
@@ -361,6 +355,99 @@ class ImageOverview implements QuPathViewerListener {
 		
 		logger.debug("Initialized tracking overlay: {}x{}, base RGB: 0x{}, initial alpha: 0b{}", 
 			width, height, Integer.toHexString(baseRGB), Integer.toBinaryString(initialMaskARGB));
+	}
+	
+	/**
+	 * Scale tracking overlay using nearest neighbor interpolation to preserve exact ARGB values.
+	 * This is critical for maintaining coherent pixel values for contour computation.
+	 */
+	private void scaleTrackingOverlayNearestNeighbor(int newWidth, int newHeight) {
+		if (trackingOverlay == null) {
+			logger.warn("Cannot scale tracking overlay - it is null");
+			return;
+		}
+		
+		int srcWidth = (int) trackingOverlay.getWidth();
+		int srcHeight = (int) trackingOverlay.getHeight();
+		
+		if (srcWidth == newWidth && srcHeight == newHeight) {
+			// No scaling needed
+			return;
+		}
+		
+		logger.debug("Scaling tracking overlay from {}x{} to {}x{} using nearest neighbor", 
+			srcWidth, srcHeight, newWidth, newHeight);
+		
+		WritableImage scaledTracking = new WritableImage(newWidth, newHeight);
+		PixelReader reader = trackingOverlay.getPixelReader();
+		PixelWriter writer = scaledTracking.getPixelWriter();
+		
+		// Calculate scaling ratios
+		double xRatio = (double) srcWidth / newWidth;
+		double yRatio = (double) srcHeight / newHeight;
+		
+		// Nearest neighbor scaling - preserves exact ARGB values
+		for (int y = 0; y < newHeight; y++) {
+			for (int x = 0; x < newWidth; x++) {
+				// Find nearest source pixel
+				int srcX = (int) (x * xRatio);
+				int srcY = (int) (y * yRatio);
+				
+				// Clamp to source bounds
+				srcX = Math.min(srcX, srcWidth - 1);
+				srcY = Math.min(srcY, srcHeight - 1);
+				
+				// Copy pixel directly (preserves exact ARGB)
+				int argb = reader.getArgb(srcX, srcY);
+				writer.setArgb(x, y, argb);
+			}
+		}
+		
+		// Replace the tracking overlay
+		trackingOverlay = scaledTracking;
+		
+		// Create new contoured overlay with same dimensions
+		contouredOverlay = new WritableImage(newWidth, newHeight);
+		
+		logger.debug("Tracking overlay scaled successfully");
+	}
+	
+	/**
+	 * Recompute contours over the ENTIRE tracking map.
+	 * This ensures contours are accurate for the new resolution after scaling.
+	 */
+	private void recomputeContoursOverWholeTrackingMap() {
+		if (trackingOverlay == null || contouredOverlay == null) {
+			logger.warn("Cannot recompute contours - overlay is null");
+			return;
+		}
+		
+		int width = (int) trackingOverlay.getWidth();
+		int height = (int) trackingOverlay.getHeight();
+		
+		logger.debug("Recomputing contours over entire {}x{} tracking map", width, height);
+		
+		// Read all alpha values from tracking overlay
+		int[] alphas = new int[width * height];
+		trackingOverlay.getPixelReader().getPixels(0, 0, width, height,
+			PixelFormat.getIntArgbInstance(), alphas, 0, width);
+
+		// Prepare output pixels (start with transparent)
+		int[] outputPixels = alphas.clone();
+		
+		// Extract alpha channel only
+		for (int i = 0; i < alphas.length; i++) {
+			alphas[i] >>>= 24;  // Shift to get alpha only
+		}
+		
+		// Apply morphological edge detection
+		applyMorphologicalEdge(alphas, outputPixels, width, height);
+		
+		// Write to contoured overlay
+		contouredOverlay.getPixelWriter().setPixels(0, 0, width, height,
+			PixelFormat.getIntArgbInstance(), outputPixels, 0, width);
+		
+		logger.debug("Contours recomputed successfully");
 	}
 	
 	/*
@@ -595,11 +682,18 @@ class ImageOverview implements QuPathViewerListener {
 
 			imgLastThumbnail = img;
 			
-			// Reinitialize tracking overlay if size changed
+			// MODIFIED: Scale tracking overlay instead of reinitializing if size changed
 			if (trackingEnabled && trackingOverlay != null && 
 				((int)trackingOverlay.getWidth() != (int)imgPreview.getWidth() || 
 				 (int)trackingOverlay.getHeight() != (int)imgPreview.getHeight())) {
-				initializeTrackingOverlay();
+				
+				// Scale the existing tracking overlay using nearest neighbor
+				scaleTrackingOverlayNearestNeighbor((int)imgPreview.getWidth(), (int)imgPreview.getHeight());
+				
+				// Recompute contours over the whole scaled tracking map
+				recomputeContoursOverWholeTrackingMap();
+				
+				//logger.info("Tracking overlay scaled and contours recomputed");
 			}
 		}
 		updateTransform();

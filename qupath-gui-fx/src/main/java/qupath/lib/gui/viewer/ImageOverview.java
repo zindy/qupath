@@ -724,6 +724,7 @@ class ImageOverview implements QuPathViewerListener {
 
 	@Override
 	public void imageDataChanged(QuPathViewer viewer, ImageData<BufferedImage> imageDataOld, ImageData<BufferedImage> imageDataNew) {
+		initializeTrackingOverlay();
 		setImage(viewer.getRGBThumbnail());
 		repaint();
 	}

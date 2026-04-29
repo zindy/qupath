@@ -89,29 +89,26 @@ class ImageOverview implements QuPathViewerListener {
 	
 	private static Color color = Color.rgb(200, 0, 0, .8);
 	private static Color colorBorder = Color.rgb(64, 64, 64);
+	private static int backgroundMaskARGB = 0x80000000;
+	private static int backgroundColorARGB = 0x00000000;
 	
 	/**
 	 * Magnification layer definition
 	 */
 	private static class MagnificationLayer {
 		final double minMag;
-		final int bitIndex;  // Which bit in alpha channel (0-3)
+		final int argbMask;  // Which bit in alpha channel (0-3)
 		final int argbColor;  // Color for the range...
 		
-		MagnificationLayer(double minMag, int bitIndex, int argbColor) {
+		MagnificationLayer(double minMag, int argbMask, int argbColor) {
 			this.minMag = minMag;
-			this.bitIndex = bitIndex;
+			this.argbMask = argbMask;
 			this.argbColor = argbColor;
 		}
 	}
 	
-	// Define the 4 magnification layers
-	private static final MagnificationLayer[] MAG_LAYERS = {
-		new MagnificationLayer(12.0,  6, 0xFF71FF9E), 
-		new MagnificationLayer(5.12,  5, 0xFFFFFF88), 
-		new MagnificationLayer(2.8,   4, 0xFFFF7171),
-		new MagnificationLayer(1.38,  3, 0xFFFFC071),
-	};
+	// Define the magnification layers for later
+	private static MagnificationLayer[] MAG_LAYERS;
 	
 	private boolean trackingEnabled = false;
 	private boolean trackingVisible = false;
@@ -122,8 +119,6 @@ class ImageOverview implements QuPathViewerListener {
 	private WritableImage trackingOverlay = null;
 	private WritableImage contouredOverlay = null;
 	
-	// Pre-computed initial alpha mask based on magnification layer bits
-	private int initialMaskARGB = 0;
 	
 	protected void mouseViewerToLocation(double x, double y) {
 		ImageServer<BufferedImage> server = viewer.getServer();
@@ -168,7 +163,7 @@ class ImageOverview implements QuPathViewerListener {
 				// Alt + mousewheel to resize the overview
 				double delta = e.getDeltaY();
 				int increment = delta > 0 ? 50 : -50;
-				int newWidth = Math.max(50, Math.min(800, preferredWidth + increment));
+				int newWidth = Math.max(150, Math.min(800, preferredWidth + increment));
 				setPreferredWidth(newWidth);
 				e.consume(); // Stop event propagation
 			}
@@ -182,13 +177,13 @@ class ImageOverview implements QuPathViewerListener {
 		
 		// Size options
 		MenuItem smallMapItem = new MenuItem("Small Map");
-		smallMapItem.setOnAction(e -> setPreferredWidth(400));
+		smallMapItem.setOnAction(e -> setPreferredWidth(150));
 		
 		MenuItem mediumMapItem = new MenuItem("Medium Map");
-		mediumMapItem.setOnAction(e -> setPreferredWidth(600));
+		mediumMapItem.setOnAction(e -> setPreferredWidth(400));
 		
 		MenuItem largeMapItem = new MenuItem("Large Map");
-		largeMapItem.setOnAction(e -> setPreferredWidth(800));
+		largeMapItem.setOnAction(e -> setPreferredWidth(600));
 		
 		// Tracking options
 		CheckMenuItem enableTrackingItem = new CheckMenuItem("Enable Tracking");
@@ -354,24 +349,26 @@ class ImageOverview implements QuPathViewerListener {
 		PixelWriter writer = trackingOverlay.getPixelWriter();
 		
 		// initial base RGB color (black for brightfield and white for fluorescence)
-		int baseRGB = viewer.getImageData().isBrightfield()? 0xFF000000 : 0xFFFFFFFF;  // White or black
-		
-		// All pixels start with alpha = INITIAL_ALPHA (all 4 bits set)
-		initialMaskARGB = 0x00FFFFFF;
-		
-		for (int i = 0; i < MAG_LAYERS.length; i++) {
-			initialMaskARGB |= 1 << (24 + MAG_LAYERS[i].bitIndex);
-		}
+	    int baseRGB = viewer.getImageData().isBrightfield()? 0x00000000 : 0x00FFFFFF;  // White or black
+		backgroundColorARGB = backgroundMaskARGB | baseRGB;
 
+		// Define the layers and include the initial color
+		MAG_LAYERS = new MagnificationLayer[] {
+			new MagnificationLayer(12.0,  0x00000000, 0xFF71FF9E), //If alpha is 0, the pixel is stored as RGB=000 as well.
+			new MagnificationLayer(5.12,  0x20000000 | baseRGB, 0xFFFFFF88), 
+			new MagnificationLayer(2.8,   0x40000000 | baseRGB, 0xFFFF7171),
+			new MagnificationLayer(1.38,  0x60000000 | baseRGB, 0xFFFFC071),
+		};
+		
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
-				writer.setArgb(x, y, baseRGB & initialMaskARGB);
+				writer.setArgb(x, y, backgroundColorARGB);
 			}
 		}
 		contouredOverlay.getPixelWriter().setPixels(0, 0, width, height, trackingOverlay.getPixelReader(), 0, 0);
 		
-		logger.debug("Initialized tracking overlay: {}x{}, base RGB: 0x{}, initial alpha: 0b{}", 
-			width, height, Integer.toHexString(baseRGB), Integer.toBinaryString(initialMaskARGB));
+		logger.debug("Initialized tracking overlay: {}x{}, base RGB: 0x{}", 
+			width, height, Integer.toHexString(baseRGB));
 	}
 	
 	/**
@@ -445,20 +442,15 @@ class ImageOverview implements QuPathViewerListener {
 		logger.debug("Recomputing contours over entire {}x{} tracking map", width, height);
 		
 		// Read all alpha values from tracking overlay
-		int[] alphas = new int[width * height];
+		int[] maskPixels = new int[width * height];
 		trackingOverlay.getPixelReader().getPixels(0, 0, width, height,
-			PixelFormat.getIntArgbInstance(), alphas, 0, width);
+			PixelFormat.getIntArgbInstance(), maskPixels, 0, width);
 
 		// Prepare output pixels (start with transparent)
-		int[] outputPixels = alphas.clone();
-		
-		// Extract alpha channel only
-		for (int i = 0; i < alphas.length; i++) {
-			alphas[i] >>>= 24;  // Shift to get alpha only
-		}
+		int[] outputPixels = maskPixels.clone();
 		
 		// Apply morphological edge detection
-		applyMorphologicalEdge(alphas, outputPixels, width, height);
+		applyMorphologicalEdge(maskPixels, outputPixels, width, height);
 		
 		// Write to contoured overlay
 		contouredOverlay.getPixelWriter().setPixels(0, 0, width, height,
@@ -470,22 +462,22 @@ class ImageOverview implements QuPathViewerListener {
 	/*
 	 * Detect the edge of a bitplane in the input array and apply a contour on the output pixel array
 	 */
-	private void applyMorphologicalEdge(int[] alphas, int[] outputPixels, int w, int h) {
+	private void applyMorphologicalEdge(int[] maskPixels, int[] outputPixels, int w, int h) {
 		for (int y = 1; y < h - 1; y++) {
 			for (int x = 1; x < w - 1; x++) {
 				int idx = y * w + x;
 				for (int i = 0; i < MAG_LAYERS.length; i++) {
-					int bit = 1 << MAG_LAYERS[i].bitIndex;
-					if ((alphas[idx] & bit) == 0) {  // visited
+					int argbMask = MAG_LAYERS[i].argbMask;
+					if (maskPixels[idx] == argbMask) {
 						boolean isEdge =
-							(alphas[idx - w]     & bit) != 0 ||
-							(alphas[idx + w]     & bit) != 0 ||
-							(alphas[idx - 1]     & bit) != 0 ||
-							(alphas[idx + 1]     & bit) != 0 ||
-							(alphas[idx - w - 1] & bit) != 0 ||
-							(alphas[idx - w + 1] & bit) != 0 ||
-							(alphas[idx + w - 1] & bit) != 0 ||
-							(alphas[idx + w + 1] & bit) != 0;
+							Integer.compareUnsigned(maskPixels[idx - w], argbMask) > 0 ||
+							Integer.compareUnsigned(maskPixels[idx + w], argbMask) > 0 ||
+							Integer.compareUnsigned(maskPixels[idx - 1], argbMask) > 0 ||
+							Integer.compareUnsigned(maskPixels[idx + 1], argbMask) > 0 ||
+							Integer.compareUnsigned(maskPixels[idx - w - 1], argbMask) > 0 ||
+							Integer.compareUnsigned(maskPixels[idx - w + 1], argbMask) > 0 ||
+							Integer.compareUnsigned(maskPixels[idx + w - 1], argbMask) > 0 ||
+							Integer.compareUnsigned(maskPixels[idx + w + 1], argbMask) > 0;
 						if (isEdge) {
 							outputPixels[idx] = MAG_LAYERS[i].argbColor;
 							break;
@@ -514,26 +506,28 @@ class ImageOverview implements QuPathViewerListener {
 			return;
 
 		double currentMag = viewer.getMagnification();
-		int currentMaskARGB = initialMaskARGB;
-		
+
 		// Determine which alpha mask to use based on current magnification
-		int bitMask = 0;
+		int currentARGB = backgroundColorARGB;
+
 		for (int i = 0; i < MAG_LAYERS.length; i++) {
 			if (currentMag >= MAG_LAYERS[i].minMag) {
-				bitMask = 1<<(24 + MAG_LAYERS[i].bitIndex);
-				currentMaskARGB ^= bitMask;
+				currentARGB = MAG_LAYERS[i].argbMask;
+				break;
 			}
 		}
+		//logger.debug("Current mag: {} -- currentARGB={}", currentMag, Integer.toHexString(currentARGB));
 
 		PixelReader reader = trackingOverlay.getPixelReader();
 		PixelWriter writer = trackingOverlay.getPixelWriter();
 		
-		// Nibble pixels in the visible region using bitwise AND
+		// Nibble pixels in the visible region
 		for (int y = minY; y <= maxY; y++) {
 			for (int x = minX; x <= maxX; x++) {
 				if (shapeVisible.contains(x, y)) {
 					int argb = reader.getArgb(x, y);
-					writer.setArgb(x, y, argb & currentMaskARGB);
+					if (Integer.compareUnsigned(argb,currentARGB) > 0)
+						writer.setArgb(x, y, currentARGB);
 				}
 			}
 		}
@@ -552,9 +546,6 @@ class ImageOverview implements QuPathViewerListener {
 			PixelFormat.getIntArgbInstance(), maskPixels, 0, padWidth);
 
 		int[] outputPixels = maskPixels.clone();
-		for (int i = 0; i < maskPixels.length; i++) {
-			maskPixels[i] >>>= 24;  // then crush maskPixels down to alpha-only in place
-		}
 
 		applyMorphologicalEdge(maskPixels, outputPixels, padWidth, padHeight);
 
@@ -724,9 +715,9 @@ class ImageOverview implements QuPathViewerListener {
 
 	@Override
 	public void imageDataChanged(QuPathViewer viewer, ImageData<BufferedImage> imageDataOld, ImageData<BufferedImage> imageDataNew) {
-		initializeTrackingOverlay();
 		setImage(viewer.getRGBThumbnail());
-		repaint();
+		initializeTrackingOverlay();
+		paintCanvas();
 	}
 
 	@Override

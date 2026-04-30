@@ -108,7 +108,7 @@ class ImageOverview implements QuPathViewerListener {
 	}
 	
 	// Define the magnification layers for later
-	private static MagnificationLayer[] MAG_LAYERS;
+	private MagnificationLayer[] MAG_LAYERS;
 	
 	private boolean trackingEnabled = false;
 	private boolean trackingVisible = false;

@@ -24,10 +24,18 @@
 package qupath.lib.gui.viewer;
 
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.image.WritableImage;
+import javafx.scene.input.MouseButton;
 import javafx.scene.paint.Color;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,12 +48,19 @@ import java.awt.Shape;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.PathIterator;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 /**
  * A small preview panel to be associated with a viewer, which shows the currently-visible
  * region &amp; can be clicked on to navigate to other regions.
+ * <p>
+ * Additional content can be painted using {@link OverviewLayer}s, and the size can be changed
+ * using the context menu or by Alt + scrolling.
  */
-class ImageOverview implements QuPathViewerListener {
+class ImageOverview implements QuPathViewerListener, OverviewLayer.Context {
 
 	private static final Logger logger = LoggerFactory.getLogger(ImageOverview.class);
 
@@ -69,7 +84,18 @@ class ImageOverview implements QuPathViewerListener {
 	private BufferedImage imgLastThumbnail; // The last thumbnail the viewer gave us
 	private WritableImage imgPreview;       // The (probably downsampled) preview version
 
-	private int maxLength = 150; // Maximum component width or height - used for thumbnail scaling
+	private static final int MIN_LENGTH = 100;
+	private static final int SMALL_LENGTH = 150;
+	private static final int MEDIUM_LENGTH = 300;
+	private static final int LARGE_LENGTH = 450;
+	private static final int MAX_LENGTH = 600;
+	private static final int RESIZE_INCREMENT = 50;
+
+	private int maxLength = SMALL_LENGTH; // Maximum component width or height - used for thumbnail scaling
+
+	private final ObservableList<OverviewLayer> layers = FXCollections.observableArrayList();
+	private final Set<OverviewLayer> failedLayers = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final ContextMenu contextMenu = new ContextMenu();
 
 	private Shape shapeVisible = null; // The visible shape (transformed already)
 	private AffineTransform transform;
@@ -91,16 +117,138 @@ class ImageOverview implements QuPathViewerListener {
 		setImage(viewer.getRGBThumbnail());
 		
 		canvas.setOnMouseClicked(e -> {
-			mouseViewerToLocation(e.getX(), e.getY());
+			if (e.getButton() == MouseButton.PRIMARY)
+				mouseViewerToLocation(e.getX(), e.getY());
 		});
-		
+
+		canvas.setOnMousePressed(e -> {
+			// Consume right-click to prevent the viewer's own context menu from showing
+			if (e.isSecondaryButtonDown())
+				e.consume();
+		});
+
 		canvas.setOnMouseDragged(e -> {
-			mouseViewerToLocation(e.getX(), e.getY());
+			if (e.isPrimaryButtonDown()) {
+				mouseViewerToLocation(e.getX(), e.getY());
+				e.consume();
+			}
+		});
+
+		canvas.setOnScroll(e -> {
+			if (e.isAltDown()) {
+				// Alt + mousewheel to resize the overview
+				double delta = e.getDeltaY() != 0 ? e.getDeltaY() : e.getDeltaX();
+				if (delta != 0) {
+					int increment = delta > 0 ? RESIZE_INCREMENT : -RESIZE_INCREMENT;
+					setMaxLength(Math.max(MIN_LENGTH, Math.min(MAX_LENGTH, maxLength + increment)));
+				}
+				e.consume();
+			}
+		});
+
+		canvas.setOnContextMenuRequested(e -> {
+			showContextMenu(e.getScreenX(), e.getScreenY());
 			e.consume();
 		});
-		
+
+		layers.addListener((javafx.collections.ListChangeListener.Change<? extends OverviewLayer> c) -> {
+			while (c.next()) {
+				if (c.wasRemoved())
+					failedLayers.removeAll(c.getRemoved());
+			}
+			repaint();
+		});
+
 		viewer.rgbThumbnailProperty().subscribe(this::repaint);
 		viewer.addViewerListener(this);
+	}
+
+	/**
+	 * Get the (modifiable) list of layers painted on top of the thumbnail.
+	 * Should only be modified on the JavaFX Application Thread.
+	 */
+	ObservableList<OverviewLayer> getLayers() {
+		return layers;
+	}
+
+	private void showContextMenu(double screenX, double screenY) {
+		var items = new ArrayList<MenuItem>();
+		for (var layer : layers) {
+			try {
+				var layerItems = layer.getContextMenuItems(this);
+				if (layerItems != null && !layerItems.isEmpty()) {
+					if (!items.isEmpty())
+						items.add(new SeparatorMenuItem());
+					items.addAll(layerItems);
+				}
+			} catch (Exception ex) {
+				logger.warn("Error requesting overview menu items from {}: {}", layer, ex.getMessage(), ex);
+			}
+		}
+		if (!items.isEmpty())
+			items.add(new SeparatorMenuItem());
+		items.addAll(createSizeMenuItems());
+		contextMenu.getItems().setAll(items);
+		contextMenu.show(canvas, screenX, screenY);
+	}
+
+	private java.util.List<MenuItem> createSizeMenuItems() {
+		var group = new ToggleGroup();
+		var items = new ArrayList<MenuItem>();
+		items.add(createSizeItem("Small overview", SMALL_LENGTH, group));
+		items.add(createSizeItem("Medium overview", MEDIUM_LENGTH, group));
+		items.add(createSizeItem("Large overview", LARGE_LENGTH, group));
+		return items;
+	}
+
+	private MenuItem createSizeItem(String text, int length, ToggleGroup group) {
+		var item = new RadioMenuItem(text);
+		item.setToggleGroup(group);
+		item.setSelected(maxLength == length);
+		item.setOnAction(e -> setMaxLength(length));
+		return item;
+	}
+
+	@Override
+	public QuPathViewer getViewer() {
+		return viewer;
+	}
+
+	@Override
+	public int getMaxLength() {
+		return maxLength;
+	}
+
+	@Override
+	public void setMaxLength(int length) {
+		if (length <= 0 || length == maxLength)
+			return;
+		maxLength = length;
+		// Force the thumbnail to be rescaled
+		imgLastThumbnail = null;
+		if (viewer != null && viewer.hasServer()) {
+			setImage(viewer.getRGBThumbnail());
+			// The scaling has changed, so the visible shape needs to be transformed again
+			var shape = viewer.getDisplayedRegionShape();
+			if (shape != null && transform != null)
+				shapeVisible = transform.createTransformedShape(shape);
+		}
+		repaint();
+	}
+
+	@Override
+	public AffineTransform getImageToOverviewTransform() {
+		return transform == null ? null : new AffineTransform(transform);
+	}
+
+	@Override
+	public Shape getVisibleShape() {
+		return shapeVisible;
+	}
+
+	@Override
+	public void requestRepaint() {
+		repaint();
 	}
 
 	private void updateTransform() {
@@ -133,8 +281,23 @@ class ImageOverview implements QuPathViewerListener {
 		setImage(viewer.getRGBThumbnail());
 
 		g.drawImage(imgPreview, 0, 0);
-		
-		
+
+		// Draw any additional layers (between the thumbnail and the visible region)
+		for (var layer : layers.toArray(OverviewLayer[]::new)) {
+			g.save();
+			try {
+				layer.paint(g, this);
+			} catch (Exception e) {
+				// Only warn once per layer, to avoid flooding the log
+				if (failedLayers.add(layer))
+					logger.warn("Error painting overview layer {}: {}", layer, e.getMessage(), e);
+				else
+					logger.debug("Error painting overview layer {}: {}", layer, e.getMessage(), e);
+			} finally {
+				g.restore();
+			}
+		}
+
 		// Draw the currently-visible region, if we have a viewer and it isn't 'zoom to fit' (in which case everything is visible)
 		if (shapeVisible != null) {
 			g.setStroke(color);
@@ -177,11 +340,13 @@ class ImageOverview implements QuPathViewerListener {
 		canvas.setVisible(visible);
 	}
 	
-	private double getWidth() {
+	@Override
+	public double getWidth() {
 		return canvas.getWidth();
 	}
 
-	private double getHeight() {
+	@Override
+	public double getHeight() {
 		return canvas.getHeight();
 	}
 

@@ -28,6 +28,7 @@ import javafx.animation.FadeTransition;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.value.ChangeListener;
+import javafx.collections.ObservableList;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -231,6 +232,19 @@ public class QuPathViewerPlus extends QuPathViewer {
 
 	private void setOverviewVisible(boolean overviewVisible) {
 		overview.setVisible(overviewVisible);
+	}
+
+	/**
+	 * Get the layers painted on top of the overview thumbnail (and below the outline of the visible region).
+	 * Layers can be added or removed to customize the overview, and can also contribute items
+	 * to the overview's context menu.
+	 * This list should only be modified on the JavaFX Application Thread.
+	 * @return a modifiable list of overview layers
+	 * @see OverviewLayer
+	 * @since v0.8.0
+	 */
+	public ObservableList<OverviewLayer> getOverviewLayers() {
+		return overview.getLayers();
 	}
 
 	/**

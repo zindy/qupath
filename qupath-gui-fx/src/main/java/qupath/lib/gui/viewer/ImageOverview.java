@@ -25,11 +25,13 @@ package qupath.lib.gui.viewer;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.SeparatorMenuItem;
@@ -97,6 +99,10 @@ class ImageOverview implements QuPathViewerListener, OverviewLayer.Context {
 	private final Set<OverviewLayer> failedLayers = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final ContextMenu contextMenu = new ContextMenu();
 
+	// The customization (if any) currently applied to this overview, and the layer it created
+	private OverviewCustomization activeCustomization = null;
+	private OverviewLayer activeCustomLayer = null;
+
 	private Shape shapeVisible = null; // The visible shape (transformed already)
 	private AffineTransform transform;
 	
@@ -151,12 +157,19 @@ class ImageOverview implements QuPathViewerListener, OverviewLayer.Context {
 			e.consume();
 		});
 
-		layers.addListener((javafx.collections.ListChangeListener.Change<? extends OverviewLayer> c) -> {
+		layers.addListener((ListChangeListener.Change<? extends OverviewLayer> c) -> {
 			while (c.next()) {
 				if (c.wasRemoved())
 					failedLayers.removeAll(c.getRemoved());
 			}
 			repaint();
+		});
+
+		// If the active customization is unregistered, fall back to the standard overview
+		OverviewCustomizations.getCustomizations().addListener(
+				(ListChangeListener.Change<? extends OverviewCustomization> c) -> {
+			if (activeCustomization != null && !c.getList().contains(activeCustomization))
+				applyCustomization(null);
 		});
 
 		viewer.rgbThumbnailProperty().subscribe(this::repaint);
@@ -185,11 +198,82 @@ class ImageOverview implements QuPathViewerListener, OverviewLayer.Context {
 				logger.warn("Error requesting overview menu items from {}: {}", layer, ex.getMessage(), ex);
 			}
 		}
+		var customMenu = createCustomizationMenu();
+		if (customMenu != null) {
+			if (!items.isEmpty())
+				items.add(new SeparatorMenuItem());
+			items.add(customMenu);
+		}
 		if (!items.isEmpty())
 			items.add(new SeparatorMenuItem());
 		items.addAll(createSizeMenuItems());
 		contextMenu.getItems().setAll(items);
 		contextMenu.show(canvas, screenX, screenY);
+	}
+
+	/**
+	 * Create the 'Custom overview' submenu, or null if no customizations are registered
+	 * (so there is nothing worth choosing between).
+	 */
+	private Menu createCustomizationMenu() {
+		var available = OverviewCustomizations.getCustomizations();
+		if (available.isEmpty())
+			return null;
+		var group = new ToggleGroup();
+		var menu = new Menu("Custom overview");
+
+		var none = new RadioMenuItem("None");
+		none.setToggleGroup(group);
+		none.setSelected(activeCustomization == null);
+		none.setOnAction(e -> applyCustomization(null));
+		menu.getItems().add(none);
+
+		for (var customization : available.toArray(OverviewCustomization[]::new)) {
+			var item = new RadioMenuItem(customization.getName());
+			item.setToggleGroup(group);
+			item.setSelected(customization == activeCustomization);
+			item.setOnAction(e -> applyCustomization(customization));
+			menu.getItems().add(item);
+		}
+		return menu;
+	}
+
+	/**
+	 * Apply a customization to this overview (and therefore its parent viewer), replacing any previous one.
+	 * @param customization the customization to apply, or null to revert to the standard overview
+	 */
+	private void applyCustomization(OverviewCustomization customization) {
+		if (customization == activeCustomization)
+			return;
+
+		// Remove the previous customization
+		if (activeCustomization != null) {
+			var oldCustomization = activeCustomization;
+			var oldLayer = activeCustomLayer;
+			activeCustomization = null;
+			activeCustomLayer = null;
+			if (oldLayer != null)
+				layers.remove(oldLayer);
+			try {
+				oldCustomization.disposeLayer(viewer, oldLayer);
+			} catch (Exception ex) {
+				logger.warn("Error disposing overview customization {}: {}", oldCustomization.getName(), ex.getMessage(), ex);
+			}
+		}
+
+		// Create the new one
+		if (customization != null) {
+			try {
+				var layer = customization.createLayer(viewer);
+				activeCustomization = customization;
+				activeCustomLayer = layer;
+				if (layer != null)
+					layers.add(layer);
+			} catch (Exception ex) {
+				logger.warn("Error creating overview customization {}: {}", customization.getName(), ex.getMessage(), ex);
+			}
+		}
+		repaint();
 	}
 
 	private java.util.List<MenuItem> createSizeMenuItems() {

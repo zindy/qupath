@@ -44,6 +44,8 @@ and run (in the qupath folder)
 gradlew run
 ```
 
+Even without adding extensions to this build, you can right click on the slide overview and select its size (small, medium, large) or use alt + scrollwheel to set a size appropriate for your task. With extensions added, an extra submenu (Custom overview) is added which lists the possible choices or return to a default state.
+
 # QuPath
 
 **QuPath is open source software for bioimage analysis**.

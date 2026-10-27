@@ -4,6 +4,46 @@
 [![Paper](https://zenodo.org/badge/DOI/10.1038/s41598-017-17204-5.svg)](https://doi.org/10.1038/s41598-017-17204-5)
 [![Twitter](https://img.shields.io/twitter/follow/qupath?style=flat)](http://twitter.com/qupath)
 
+# PLEASE READ! Changes introduced in this branch (overview-hooks)
+
+**This branch introduces an overview layer and customization hooks.** On stock QuPath any of the following extensions
+logs a warning and does nothing.
+
+* https://github.com/zindy/qupath-extension-heatmap-overview
+* https://github.com/zindy/qupath-extension-tracking-overview
+
+For now, I would test this by creating a new local branch in a QuPath local repository with the required additions:
+
+```
+# Create a separate branch for testing the overview hooks
+git switch -c test-overview-hooks
+
+# Fetch the zindy branch
+git remote add zindy https://github.com/zindy/qupath.git
+git fetch zindy
+
+# Merge the overview hooks into your new branch
+git merge zindy/overview-hooks
+```
+
+Also create a `include-extra` file [as explained here](https://github.com/qupath/qupath-extension-template#2-create-an-include-extra-file) at the root of your qupath folder and with the following content (you can test the extensions above together or separately):
+
+```
+[includeBuild]
+../qupath-extension-heatmap-overview
+../qupath-extension-tracking-overview
+
+[dependencies]
+io.github.qupath:qupath-extension-heatmap-overview
+io.github.qupath:qupath-extension-tracking-overview
+```
+
+and run (in the qupath folder)
+
+```
+gradlew run
+```
+
 # QuPath
 
 **QuPath is open source software for bioimage analysis**.
